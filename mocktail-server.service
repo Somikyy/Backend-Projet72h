@@ -1,0 +1,16 @@
+[Unit]
+Description=Mocktail Machine Backend Server
+After=network.target
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/mocktail-server
+ExecStart=/home/pi/mocktail-server/venv/bin/python /home/pi/mocktail-server/app.py
+Restart=always
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=mocktail-server
+
+[Install]
+WantedBy=multi-user.target
