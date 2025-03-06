@@ -1,0 +1,34 @@
+[
+  {
+    "id": "1a269d7f-b96d-403c-98a1-c7414944bd93",
+    "mocktailId": "Sunrise Rouge",
+    "userName": "Kirill",
+    "rating": 5.0,
+    "comment": "un cocktail tr\u00e8s bien, j\u2019aime trop!",
+    "createdAt": "2025-03-06T23:10:21.353473"
+  },
+  {
+    "id": "521cedfb-d0d5-4a16-97cc-8c78a5c8d055",
+    "mocktailId": "Citrus Fizz",
+    "userName": "Kirill",
+    "rating": 1.5,
+    "comment": "Plut\u00f4t pas mal, le go\u00fbt interessant.",
+    "createdAt": "2025-03-06T23:26:44.244147"
+  },
+  {
+    "id": "25e3a3eb-b626-43bb-b071-de3f1bc24306",
+    "mocktailId": "Berry Splash",
+    "userName": "Th\u00e9ophile ",
+    "rating": 5.0,
+    "comment": "juste du WOW!! Trop banger le cocktail ",
+    "createdAt": "2025-03-06T23:31:56.702593"
+  },
+  {
+    "id": "f1bc19e3-effc-4672-842a-1f69f80595a3",
+    "mocktailId": "Bleu Lagoon",
+    "userName": "Zineb",
+    "rating": 4.5,
+    "comment": "tr\u00e8s bien!",
+    "createdAt": "2025-03-06T23:37:37.624240"
+  }
+]

@@ -1,0 +1,26 @@
+[
+  {
+    "ingredientId": "cranberry",
+    "name": "Jus de Cranberry",
+    "currentLevel": 892,
+    "maxLevel": 1000
+  },
+  {
+    "ingredientId": "grenadine",
+    "name": "Sirop de Grenadine",
+    "currentLevel": 898,
+    "maxLevel": 1000
+  },
+  {
+    "ingredientId": "citron",
+    "name": "Jus de Citron",
+    "currentLevel": 1000,
+    "maxLevel": 1000
+  },
+  {
+    "ingredientId": "sprite",
+    "name": "Sprite",
+    "currentLevel": 860,
+    "maxLevel": 1000
+  }
+]

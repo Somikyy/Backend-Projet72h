@@ -1,0 +1,122 @@
+[
+  {
+    "id": "2a077e64-5c89-4331-99b4-90eeb6c3ddab",
+    "timestamp": 1741300043.8912528,
+    "status": "processing",
+    "mocktailName": "Citrus Fizz",
+    "ingredients": {
+      "Jus de Citron": 30,
+      "Sprite": 100,
+      "Sirop de Grenadine": 20
+    },
+    "totalVolume": 150
+  },
+  {
+    "id": "1906ea79-5542-4f43-8632-b1e0f4f0671b",
+    "timestamp": 1741300054.5412414,
+    "status": "processing",
+    "mocktailName": "Citrus Fizz",
+    "ingredients": {
+      "Jus de Citron": 70,
+      "Sprite": 233,
+      "Sirop de Grenadine": 47
+    },
+    "totalVolume": 350
+  },
+  {
+    "id": "c8f76c89-6849-4729-bd6e-1d1143975461",
+    "timestamp": 1741300060.1727042,
+    "status": "processing",
+    "mocktailName": "Citrus Fizz",
+    "ingredients": {
+      "Jus de Citron": 70,
+      "Sprite": 233,
+      "Sirop de Grenadine": 47
+    },
+    "totalVolume": 350
+  },
+  {
+    "id": "549cac45-4373-4063-a7d9-bb5d9a12b296",
+    "timestamp": 1741300074.6366622,
+    "status": "processing",
+    "mocktailName": "Berry Splash",
+    "ingredients": {
+      "Jus de Cranberry": 210,
+      "Jus de Citron": 70,
+      "Sprite": 70
+    },
+    "totalVolume": 350
+  },
+  {
+    "id": "c3337d5a-ace5-4fd4-b45c-d65754d7823c",
+    "timestamp": 1741300330.8198173,
+    "status": "processing",
+    "mocktailName": "Berry Splash",
+    "ingredients": {
+      "Jus de Cranberry": 73,
+      "Jus de Citron": 124,
+      "Sprite": 53
+    },
+    "totalVolume": 250
+  },
+  {
+    "id": "c06c7750-54d3-45f2-b0c9-05ad4dfc3068",
+    "timestamp": 1741300342.8020575,
+    "status": "processing",
+    "mocktailName": "Bleu Lagoon",
+    "ingredients": {
+      "Sprite": 27,
+      "Jus de Citron": 113,
+      "Sirop de Grenadine": 10
+    },
+    "totalVolume": 150
+  },
+  {
+    "id": "3dfefc7a-8690-49ce-b790-352bc5b9966b",
+    "timestamp": 1741300351.205704,
+    "status": "processing",
+    "mocktailName": "Berry Splash",
+    "ingredients": {
+      "Jus de Cranberry": 350,
+      "Jus de Citron": 0,
+      "Sprite": 0
+    },
+    "totalVolume": 350
+  },
+  {
+    "id": "f5e22472-6c5b-4a76-9fd6-7ac16d217b78",
+    "timestamp": 1741300387.1400368,
+    "status": "processing",
+    "mocktailName": "Citrus Fizz",
+    "ingredients": {
+      "Jus de Citron": 70,
+      "Sprite": 233,
+      "Sirop de Grenadine": 47
+    },
+    "totalVolume": 350
+  },
+  {
+    "id": "fbad10d5-0f2a-4d56-b3f6-1ee99f6b5ea3",
+    "timestamp": 1741300410.795867,
+    "status": "processing",
+    "mocktailName": "Sunrise Rouge",
+    "ingredients": {
+      "Jus de Cranberry": 125,
+      "Sirop de Grenadine": 25,
+      "Sprite": 0
+    },
+    "totalVolume": 150
+  },
+  {
+    "id": "168a36c3-eb82-4f82-8d8c-1c8df11f0ee6",
+    "timestamp": 1741300594.7109504,
+    "status": "processing",
+    "mocktailName": "Sunrise Rouge",
+    "ingredients": {
+      "Jus de Cranberry": 108,
+      "Sirop de Grenadine": 102,
+      "Sprite": 140
+    },
+    "totalVolume": 350
+  }
+]
