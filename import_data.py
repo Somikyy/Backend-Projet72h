@@ -4,7 +4,7 @@ import os
 
 # Параметры подключения к базе данных
 db_config = {
-    'host': 'localhost',
+    'host': '192.168.1.113',
     'user': 'mocktail_user',
     'password': 'sin',
     'database': 'mocktail_machine'

@@ -3,356 +3,438 @@ from flask_cors import CORS
 import time
 import logging
 import uuid
-import json
-import os
-import threading
+import mysql.connector
+from mysql.connector import Error
 
-# Set up logging
+# Настройка логирования
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     filename='mocktail_server.log')
 logger = logging.getLogger('mocktail_server')
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+CORS(app)  # Включаем CORS для всех маршрутов
 
-# Storage paths
-DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
-os.makedirs(DATA_DIR, exist_ok=True)
+# Параметры подключения к базе данных
+DB_CONFIG = {
+    'host': '192.168.1.113',
+    'user': 'mocktail_user',
+    'password': 'sin',
+    'database': 'mocktail_machine'
+}
 
-ORDERS_FILE = os.path.join(DATA_DIR, 'orders.json')
-REVIEWS_FILE = os.path.join(DATA_DIR, 'reviews.json')
-INGREDIENTS_FILE = os.path.join(DATA_DIR, 'ingredients.json')
+# Функция для получения соединения с базой данных
+def get_db_connection():
+    try:
+        connection = mysql.connector.connect(**DB_CONFIG)
+        return connection
+    except Error as e:
+        logger.error(f"Ошибка подключения к базе данных: {e}")
+        return None
 
-# Thread lock for file operations
-file_lock = threading.Lock()
-
-# Initialize data files if they don't exist
-def init_data_files():
-    # Orders
-    if not os.path.exists(ORDERS_FILE):
-        with open(ORDERS_FILE, 'w') as f:
-            json.dump([], f)
-    
-    # Reviews
-    if not os.path.exists(REVIEWS_FILE):
-        with open(REVIEWS_FILE, 'w') as f:
-            json.dump([], f)
-    
-    # Ingredients
-    if not os.path.exists(INGREDIENTS_FILE):
-        # Initialize with default ingredients
-        default_ingredients = [
-            {
-                "ingredientId": "cranberry",
-                "name": "Jus de Cranberry",
-                "currentLevel": 800,
-                "maxLevel": 1000
-            },
-            {
-                "ingredientId": "grenadine",
-                "name": "Sirop de Grenadine",
-                "currentLevel": 700,
-                "maxLevel": 1000
-            },
-            {
-                "ingredientId": "citron",
-                "name": "Jus de Citron",
-                "currentLevel": 600,
-                "maxLevel": 1000
-            },
-            {
-                "ingredientId": "sprite",
-                "name": "Sprite",
-                "currentLevel": 900,
-                "maxLevel": 1000
-            }
-        ]
-        with open(INGREDIENTS_FILE, 'w') as f:
-            json.dump(default_ingredients, f)
-
-# Initialize data files at startup
-init_data_files()
-
-# Helper function to read data from file
-def read_data(file_path):
-    with file_lock:
-        try:
-            with open(file_path, 'r') as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"Error reading from {file_path}: {str(e)}")
-            return []
-
-# Helper function to write data to file
-def write_data(file_path, data):
-    with file_lock:
-        try:
-            with open(file_path, 'w') as f:
-                json.dump(data, f, indent=2)
-        except Exception as e:
-            logger.error(f"Error writing to {file_path}: {str(e)}")
-
-# Health check endpoint
+# Проверка здоровья системы
 @app.route('/health', methods=['GET'])
 def health_check():
-    """Endpoint to check if the server is running"""
-    return jsonify({"status": "online", "timestamp": time.time()})
+    """Эндпоинт для проверки работы сервера"""
+    conn = get_db_connection()
+    if conn:
+        conn.close()
+        return jsonify({"status": "online", "database": "connected", "timestamp": time.time()})
+    return jsonify({"status": "online", "database": "disconnected", "timestamp": time.time()})
 
-# Endpoint to prepare a mocktail
+# Эндпоинт для приготовления коктейля
 @app.route('/prepare_mocktail', methods=['POST'])
 def prepare_mocktail():
-    """Endpoint to receive mocktail preparation requests"""
+    """Эндпоинт для приема запросов на приготовление коктейля"""
     try:
         data = request.json
-        logger.info(f"Received order: {data}")
+        logger.info(f"Получен заказ: {data}")
         
-        # Validate required fields
+        # Проверяем наличие обязательных полей
         required_fields = ['mocktailName', 'ingredients', 'totalVolume']
         for field in required_fields:
             if field not in data:
-                return jsonify({"success": False, "message": f"Missing required field: {field}"}), 400
+                return jsonify({"success": False, "message": f"Отсутствует обязательное поле: {field}"}), 400
         
-        # Add order to our list with a timestamp and ID
-        orders = read_data(ORDERS_FILE)
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"success": False, "message": "Не удалось подключиться к базе данных"}), 500
         
+        cursor = conn.cursor(dictionary=True)
+        
+        # Создаем ID заказа
         order_id = str(uuid.uuid4())
-        order = {
-            "id": order_id,
-            "timestamp": time.time(),
-            "status": "received",
-            "mocktailName": data['mocktailName'],
-            "ingredients": data['ingredients'],
-            "totalVolume": data['totalVolume']
-        }
-        orders.append(order)
-        write_data(ORDERS_FILE, orders)
         
-        # Update ingredient levels
-        update_ingredient_levels(data['ingredients'])
+        # Добавляем заказ в базу данных
+        query = """
+        INSERT INTO orders (order_id, mocktail_name, timestamp, status, total_volume)
+        VALUES (%s, %s, %s, %s, %s)
+        """
+        values = (
+            order_id,
+            data['mocktailName'],
+            time.time(),
+            'received',
+            data['totalVolume']
+        )
+        cursor.execute(query, values)
         
-        # Simulate processing time
+        # Добавляем ингредиенты заказа
+        for ingredient_name, amount in data['ingredients'].items():
+            query = """
+            INSERT INTO order_ingredients (order_id, ingredient_name, amount)
+            VALUES (%s, %s, %s)
+            """
+            values = (order_id, ingredient_name, amount)
+            cursor.execute(query, values)
+        
+        # Обновляем уровни ингредиентов
+        for ingredient_name, amount in data['ingredients'].items():
+            query = """
+            UPDATE ingredients
+            SET current_level = GREATEST(0, current_level - %s)
+            WHERE name = %s
+            """
+            values = (amount, ingredient_name)
+            cursor.execute(query, values)
+        
+        # Имитируем время обработки
         time.sleep(1)
         
-        # Update order status
-        for i, o in enumerate(orders):
-            if o['id'] == order_id:
-                orders[i]['status'] = "processing"
-                break
+        # Обновляем статус заказа
+        query = """
+        UPDATE orders
+        SET status = 'processing'
+        WHERE order_id = %s
+        """
+        cursor.execute(query, (order_id,))
         
-        write_data(ORDERS_FILE, orders)
+        conn.commit()
+        cursor.close()
+        conn.close()
         
         return jsonify({
             "success": True,
-            "message": "Mocktail order received and processing",
+            "message": "Заказ коктейля принят и обрабатывается",
             "orderId": order_id
         })
         
     except Exception as e:
-        logger.error(f"Error processing request: {str(e)}")
-        return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
+        logger.error(f"Ошибка обработки запроса: {str(e)}")
+        return jsonify({"success": False, "message": f"Ошибка сервера: {str(e)}"}), 500
 
-# Endpoint to check order status
+# Эндпоинт для проверки статуса заказа
 @app.route('/order_status/<order_id>', methods=['GET'])
 def order_status(order_id):
-    """Endpoint to check the status of an order"""
+    """Эндпоинт для проверки статуса заказа"""
     try:
-        orders = read_data(ORDERS_FILE)
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"success": False, "message": "Не удалось подключиться к базе данных"}), 500
         
-        # Find the order with the given ID
-        for order in orders:
-            if order['id'] == order_id:
-                return jsonify({
-                    "success": True,
-                    "order": order
-                })
+        cursor = conn.cursor(dictionary=True)
         
-        return jsonify({"success": False, "message": "Order not found"}), 404
+        # Получаем основную информацию о заказе
+        query = """
+        SELECT * FROM orders WHERE order_id = %s
+        """
+        cursor.execute(query, (order_id,))
+        order = cursor.fetchone()
         
-    except Exception as e:
-        logger.error(f"Error checking order status: {str(e)}")
-        return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
-
-# Endpoint to get all orders
-@app.route('/orders', methods=['GET'])
-def get_orders():
-    """Endpoint to get all orders"""
-    orders = read_data(ORDERS_FILE)
-    return jsonify({
-        "success": True,
-        "orders": orders
-    })
-
-# REVIEWS ENDPOINTS
-
-# Get all reviews for a mocktail
-@app.route('/reviews/<mocktail_id>', methods=['GET'])
-def get_mocktail_reviews(mocktail_id):
-    """Get all reviews for a specific mocktail"""
-    try:
-        reviews = read_data(REVIEWS_FILE)
+        if not order:
+            cursor.close()
+            conn.close()
+            return jsonify({"success": False, "message": "Заказ не найден"}), 404
         
-        # Filter reviews for the specified mocktail
-        mocktail_reviews = [r for r in reviews if r['mocktailId'] == mocktail_id]
+        # Получаем ингредиенты заказа
+        query = """
+        SELECT ingredient_name, amount FROM order_ingredients WHERE order_id = %s
+        """
+        cursor.execute(query, (order_id,))
+        ingredients = cursor.fetchall()
+        
+        # Формируем словарь ингредиентов
+        ingredients_dict = {item['ingredient_name']: item['amount'] for item in ingredients}
+        
+        # Добавляем ингредиенты к информации о заказе
+        order['ingredients'] = ingredients_dict
+        
+        cursor.close()
+        conn.close()
         
         return jsonify({
             "success": True,
-            "reviews": mocktail_reviews
+            "order": order
+        })
+        
+    except Exception as e:
+        logger.error(f"Ошибка проверки статуса заказа: {str(e)}")
+        return jsonify({"success": False, "message": f"Ошибка сервера: {str(e)}"}), 500
+
+# Эндпоинт для получения всех заказов
+@app.route('/orders', methods=['GET'])
+def get_orders():
+    """Эндпоинт для получения всех заказов"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"success": False, "message": "Не удалось подключиться к базе данных"}), 500
+        
+        cursor = conn.cursor(dictionary=True)
+        
+        # Получаем все заказы
+        query = """
+        SELECT * FROM orders ORDER BY timestamp DESC
+        """
+        cursor.execute(query)
+        orders = cursor.fetchall()
+        
+        # Для каждого заказа получаем ингредиенты
+        for order in orders:
+            query = """
+            SELECT ingredient_name, amount FROM order_ingredients WHERE order_id = %s
+            """
+            cursor.execute(query, (order['order_id'],))
+            ingredients = cursor.fetchall()
+            order['ingredients'] = {item['ingredient_name']: item['amount'] for item in ingredients}
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "orders": orders
+        })
+        
+    except Exception as e:
+        logger.error(f"Ошибка получения заказов: {str(e)}")
+        return jsonify({"success": False, "message": f"Ошибка сервера: {str(e)}"}), 500
+
+# ЭНДПОИНТЫ ДЛЯ ОТЗЫВОВ
+
+# Получение всех отзывов для коктейля
+@app.route('/reviews/<mocktail_id>', methods=['GET'])
+def get_mocktail_reviews(mocktail_id):
+    """Получение всех отзывов для конкретного коктейля"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"success": False, "message": "Не удалось подключиться к базе данных"}), 500
+        
+        cursor = conn.cursor(dictionary=True)
+        
+        # Получаем отзывы
+        query = """
+        SELECT * FROM reviews WHERE mocktail_id = %s ORDER BY created_at DESC
+        """
+        cursor.execute(query, (mocktail_id,))
+        reviews = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "reviews": reviews
         })
     except Exception as e:
-        logger.error(f"Error fetching reviews: {str(e)}")
-        return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
+        logger.error(f"Ошибка получения отзывов: {str(e)}")
+        return jsonify({"success": False, "message": f"Ошибка сервера: {str(e)}"}), 500
 
-# Add a new review
+# Добавление нового отзыва
 @app.route('/reviews', methods=['POST'])
 def add_review():
-    """Add a new review for a mocktail"""
+    """Добавление нового отзыва для коктейля"""
     try:
         data = request.json
-        logger.info(f"Received review: {data}")
+        logger.info(f"Получен отзыв: {data}")
         
-        # Validate required fields
+        # Проверяем наличие обязательных полей
         required_fields = ['mocktailId', 'userName', 'rating', 'comment']
         for field in required_fields:
             if field not in data:
-                return jsonify({"success": False, "message": f"Missing required field: {field}"}), 400
+                return jsonify({"success": False, "message": f"Отсутствует обязательное поле: {field}"}), 400
         
-        # Read existing reviews
-        reviews = read_data(REVIEWS_FILE)
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"success": False, "message": "Не удалось подключиться к базе данных"}), 500
         
-        # Create new review
+        cursor = conn.cursor()
+        
+        # Создаем ID отзыва
         review_id = str(uuid.uuid4())
-        review = {
-            "id": review_id,
-            "mocktailId": data['mocktailId'],
-            "userName": data['userName'],
-            "rating": data['rating'],
-            "comment": data['comment'],
-            "createdAt": data.get('createdAt', time.time())
-        }
         
-        reviews.append(review)
-        write_data(REVIEWS_FILE, reviews)
+        # Добавляем отзыв
+        query = """
+        INSERT INTO reviews (review_id, mocktail_id, user_name, rating, comment, created_at)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        """
+        values = (
+            review_id,
+            data['mocktailId'],
+            data['userName'],
+            data['rating'],
+            data['comment'],
+            data.get('createdAt', time.time())
+        )
+        cursor.execute(query, values)
+        
+        # Обновляем средний рейтинг коктейля
+        query = """
+        SELECT AVG(rating) as avg_rating, COUNT(*) as review_count 
+        FROM reviews 
+        WHERE mocktail_id = %s
+        """
+        cursor.execute(query, (data['mocktailId'],))
+        result = cursor.fetchone()
+        
+        if result and result[0] is not None:
+            avg_rating = float(result[0])
+            review_count = int(result[1])
+            
+            query = """
+            UPDATE mocktails
+            SET rating = %s, review_count = %s
+            WHERE mocktail_id = %s
+            """
+            cursor.execute(query, (avg_rating, review_count, data['mocktailId']))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
         
         return jsonify({
             "success": True,
-            "message": "Review added successfully",
+            "message": "Отзыв успешно добавлен",
             "reviewId": review_id
         })
     except Exception as e:
-        logger.error(f"Error adding review: {str(e)}")
-        return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
+        logger.error(f"Ошибка добавления отзыва: {str(e)}")
+        return jsonify({"success": False, "message": f"Ошибка сервера: {str(e)}"}), 500
 
-# INGREDIENTS ENDPOINTS
+# ЭНДПОИНТЫ ДЛЯ ИНГРЕДИЕНТОВ
 
-# Get ingredient levels
+# Получение уровней ингредиентов
 @app.route('/ingredients/levels', methods=['GET'])
 def get_ingredient_levels():
-    """Get the current levels of all ingredients"""
+    """Получение текущих уровней всех ингредиентов"""
     try:
-        ingredients = read_data(INGREDIENTS_FILE)
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"success": False, "message": "Не удалось подключиться к базе данных"}), 500
+        
+        cursor = conn.cursor(dictionary=True)
+        
+        # Получаем ингредиенты
+        query = """
+        SELECT ingredient_id as ingredientId, name, current_level as currentLevel, max_level as maxLevel 
+        FROM ingredients
+        """
+        cursor.execute(query)
+        ingredients = cursor.fetchall()
+        
+        cursor.close()
+        conn.close()
+        
         return jsonify({
             "success": True,
             "ingredients": ingredients
         })
     except Exception as e:
-        logger.error(f"Error fetching ingredient levels: {str(e)}")
-        return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
+        logger.error(f"Ошибка получения уровней ингредиентов: {str(e)}")
+        return jsonify({"success": False, "message": f"Ошибка сервера: {str(e)}"}), 500
 
-# Check ingredient availability
+# Проверка наличия ингредиентов
 @app.route('/ingredients/check', methods=['POST'])
 def check_ingredients():
-    """Check if there are enough ingredients for a mocktail"""
+    """Проверка наличия достаточного количества ингредиентов для коктейля"""
     try:
         data = request.json
-        logger.info(f"Checking ingredients: {data}")
+        logger.info(f"Проверка ингредиентов: {data}")
         
         if 'ingredients' not in data:
-            return jsonify({"success": False, "message": "Missing required field: ingredients"}), 400
+            return jsonify({"success": False, "message": "Отсутствует обязательное поле: ingredients"}), 400
         
-        ingredients = read_data(INGREDIENTS_FILE)
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"success": False, "message": "Не удалось подключиться к базе данных"}), 500
+        
+        cursor = conn.cursor(dictionary=True)
+        
+        # Проверяем наличие каждого ингредиента
         requested_ingredients = data['ingredients']
-        
-        # Check if there are enough of each ingredient
         missing_ingredients = []
+        
         for name, amount in requested_ingredients.items():
-            # Find the ingredient by name
-            ingredient_found = False
-            for ingredient in ingredients:
-                if ingredient['name'].lower() == name.lower():
-                    ingredient_found = True
-                    if ingredient['currentLevel'] < amount:
-                        missing_ingredients.append(f"{name} (need {amount} ml, have {ingredient['currentLevel']} ml)")
-                    break
+            # Ищем ингредиент по имени
+            query = """
+            SELECT current_level FROM ingredients WHERE name = %s
+            """
+            cursor.execute(query, (name,))
+            result = cursor.fetchone()
             
-            if not ingredient_found:
-                missing_ingredients.append(f"{name} (not available)")
+            if not result:
+                missing_ingredients.append(f"{name} (не доступен)")
+            elif result['current_level'] < amount:
+                missing_ingredients.append(f"{name} (требуется {amount} мл, доступно {result['current_level']} мл)")
+        
+        cursor.close()
+        conn.close()
         
         if missing_ingredients:
             return jsonify({
                 "available": False,
-                "message": "Some ingredients are not available in sufficient quantity",
+                "message": "Некоторые ингредиенты недоступны в достаточном количестве",
                 "missingIngredients": missing_ingredients
             })
         
         return jsonify({
             "available": True,
-            "message": "All ingredients are available"
+            "message": "Все ингредиенты доступны"
         })
     except Exception as e:
-        logger.error(f"Error checking ingredients: {str(e)}")
-        return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
+        logger.error(f"Ошибка проверки ингредиентов: {str(e)}")
+        return jsonify({"success": False, "message": f"Ошибка сервера: {str(e)}"}), 500
 
 # Обновление уровня ингредиентов (для админ-панели)
 @app.route('/ingredients/update', methods=['POST'])
 def update_ingredient_levels_admin():
-    """Update ingredient levels (admin function)"""
+    """Обновление уровней ингредиентов (административная функция)"""
     try:
         data = request.json
-        logger.info(f"Updating ingredient levels: {data}")
+        logger.info(f"Обновление уровней ингредиентов: {data}")
         
         if 'updatedLevels' not in data:
-            return jsonify({"success": False, "message": "Missing required field: updatedLevels"}), 400
+            return jsonify({"success": False, "message": "Отсутствует обязательное поле: updatedLevels"}), 400
         
-        updated_levels = data['updatedLevels']
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({"success": False, "message": "Не удалось подключиться к базе данных"}), 500
         
-        # Получаем текущие ингредиенты
-        ingredients = read_data(INGREDIENTS_FILE)
+        cursor = conn.cursor()
         
         # Обновляем уровни
-        for i, ingredient in enumerate(ingredients):
-            if ingredient['ingredientId'] in updated_levels:
-                ingredients[i]['currentLevel'] = updated_levels[ingredient['ingredientId']]
+        updated_levels = data['updatedLevels']
+        for ingredient_id, level in updated_levels.items():
+            query = """
+            UPDATE ingredients
+            SET current_level = %s
+            WHERE ingredient_id = %s
+            """
+            cursor.execute(query, (level, ingredient_id))
         
-        # Сохраняем обновленные данные
-        write_data(INGREDIENTS_FILE, ingredients)
+        conn.commit()
+        cursor.close()
+        conn.close()
         
         return jsonify({
             "success": True,
-            "message": "Ingredient levels updated successfully"
+            "message": "Уровни ингредиентов успешно обновлены"
         })
     except Exception as e:
-        logger.error(f"Error updating ingredient levels: {str(e)}")
-        return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
-
-# Helper function to update ingredient levels
-def update_ingredient_levels(used_ingredients):
-    """Update ingredient levels after preparing a mocktail"""
-    try:
-        ingredients = read_data(INGREDIENTS_FILE)
-        
-        for name, amount in used_ingredients.items():
-            for i, ingredient in enumerate(ingredients):
-                if ingredient['name'].lower() == name.lower():
-                    # Decrease the level, but don't go below 0
-                    ingredients[i]['currentLevel'] = max(0, ingredient['currentLevel'] - amount)
-                    break
-        
-        write_data(INGREDIENTS_FILE, ingredients)
-        logger.info(f"Updated ingredient levels after using: {used_ingredients}")
-    except Exception as e:
-        logger.error(f"Error updating ingredient levels: {str(e)}")
+        logger.error(f"Ошибка обновления уровней ингредиентов: {str(e)}")
+        return jsonify({"success": False, "message": f"Ошибка сервера: {str(e)}"}), 500
 
 if __name__ == '__main__':
-    logger.info("Starting Mocktail Machine server...")
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    logger.info("Запуск сервера Mocktail Machine с MySQL...")
+    app.run(host='0.0.0.0', port=5001, debug=True)
