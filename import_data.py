@@ -4,7 +4,7 @@ import os
 
 # Параметры подключения к базе данных
 db_config = {
-    'host': '192.168.1.113',
+    'host': '172.20.10.4',
     'user': 'mocktail_user',
     'password': 'sin',
     'database': 'mocktail_machine'
@@ -51,8 +51,66 @@ def init_ingredients_file_if_needed():
             json.dump(default_ingredients, f, indent=2)
         print(f"Создан файл ингредиентов: {INGREDIENTS_FILE}")
 
-# Импорт ингредиентов
-def import_ingredients():
+# Добавление/обновление структуры таблиц для рейтингов
+def update_table_structure():
+    print("Обновление структуры таблиц для поддержки рейтингов...")
+    
+    conn = mysql.connector.connect(**db_config)
+    cursor = conn.cursor()
+    
+    try:
+        # Проверяем наличие колонки rating в таблице mocktails
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_NAME = 'mocktails' 
+            AND COLUMN_NAME = 'rating'
+            AND TABLE_SCHEMA = %s
+        """, (db_config['database'],))
+        
+        if cursor.fetchone()[0] == 0:
+            print("Добавление колонки rating в таблицу mocktails")
+            cursor.execute("ALTER TABLE mocktails ADD COLUMN rating FLOAT DEFAULT 0")
+        else:
+            print("Колонка rating уже существует")
+        
+        # Проверяем наличие колонки review_count в таблице mocktails
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_NAME = 'mocktails' 
+            AND COLUMN_NAME = 'review_count'
+            AND TABLE_SCHEMA = %s
+        """, (db_config['database'],))
+        
+        if cursor.fetchone()[0] == 0:
+            print("Добавление колонки review_count в таблицу mocktails")
+            cursor.execute("ALTER TABLE mocktails ADD COLUMN review_count INT DEFAULT 0")
+        else:
+            print("Колонка review_count уже существует")
+        
+        # Обновляем значения рейтингов на основе существующих отзывов
+        print("Обновление рейтингов на основе существующих отзывов...")
+        cursor.execute("""
+            UPDATE mocktails m
+            SET 
+                rating = (SELECT COALESCE(AVG(rating), 0) FROM reviews r WHERE r.mocktail_id = m.mocktail_id),
+                review_count = (SELECT COUNT(*) FROM reviews r WHERE r.mocktail_id = m.mocktail_id)
+        """)
+        
+        conn.commit()
+        print("Обновление структуры таблиц завершено успешно!")
+        
+    except Exception as e:
+        conn.rollback()
+        print(f"Ошибка при обновлении структуры таблиц: {e}")
+    
+    finally:
+        cursor.close()
+        conn.close()
+
+# Обновление ингредиентов (вместо удаления и повторной вставки)
+def update_ingredients():
     # Проверяем наличие файла ингредиентов
     init_ingredients_file_if_needed()
     
@@ -65,37 +123,56 @@ def import_ingredients():
     cursor = conn.cursor()
     
     try:
-        # Очистка таблицы перед импортом
-        cursor.execute("DELETE FROM ingredients")
-        
-        # Вставка данных в таблицу ingredients
         for ingredient in ingredients:
-            query = """
-            INSERT INTO ingredients (ingredient_id, name, current_level, max_level)
-            VALUES (%s, %s, %s, %s)
-            """
-            values = (
-                ingredient['ingredientId'],
-                ingredient['name'],
-                ingredient['currentLevel'],
-                ingredient['maxLevel']
+            # Проверяем, существует ли ингредиент
+            cursor.execute(
+                "SELECT COUNT(*) FROM ingredients WHERE ingredient_id = %s", 
+                (ingredient['ingredientId'],)
             )
-            cursor.execute(query, values)
+            if cursor.fetchone()[0] > 0:
+                # Обновляем существующий ингредиент
+                query = """
+                UPDATE ingredients
+                SET name = %s, current_level = %s, max_level = %s
+                WHERE ingredient_id = %s
+                """
+                values = (
+                    ingredient['name'],
+                    ingredient['currentLevel'],
+                    ingredient['maxLevel'],
+                    ingredient['ingredientId']
+                )
+                cursor.execute(query, values)
+                print(f"Обновлен ингредиент: {ingredient['name']}")
+            else:
+                # Вставляем новый ингредиент
+                query = """
+                INSERT INTO ingredients (ingredient_id, name, current_level, max_level)
+                VALUES (%s, %s, %s, %s)
+                """
+                values = (
+                    ingredient['ingredientId'],
+                    ingredient['name'],
+                    ingredient['currentLevel'],
+                    ingredient['maxLevel']
+                )
+                cursor.execute(query, values)
+                print(f"Добавлен новый ингредиент: {ingredient['name']}")
         
         # Сохранение изменений
         conn.commit()
-        print(f"Импортировано {len(ingredients)} ингредиентов")
+        print(f"Обновление ингредиентов завершено")
     
     except Exception as e:
         conn.rollback()
-        print(f"Ошибка при импорте ингредиентов: {e}")
+        print(f"Ошибка при обновлении ингредиентов: {e}")
     
     finally:
         cursor.close()
         conn.close()
 
-# Импорт коктейлей из данных cocktail_manager.dart
-def import_mocktails():
+# Обновление коктейлей (вместо удаления и повторной вставки)
+def update_mocktails():
     # Данные о коктейлях (преобразованные из cocktail_manager.dart)
     mocktails = [
         {
@@ -200,28 +277,47 @@ def import_mocktails():
     cursor = conn.cursor()
     
     try:
-        # 1. Очистка таблиц перед импортом (в обратном порядке из-за ограничений внешнего ключа)
-        cursor.execute("DELETE FROM mocktail_ingredients")
-        cursor.execute("DELETE FROM mocktail_tags")
-        cursor.execute("DELETE FROM mocktails")
-        cursor.execute("DELETE FROM tags")
-        
-        # 2. Импорт коктейлей
         for mocktail in mocktails:
-            # Вставка основной информации о коктейле
-            query = """
-            INSERT INTO mocktails (mocktail_id, name, description, image_url)
-            VALUES (%s, %s, %s, %s)
-            """
-            values = (
-                mocktail['mocktail_id'],
-                mocktail['name'],
-                mocktail['description'],
-                mocktail['image_url']
+            # Проверяем, существует ли коктейль
+            cursor.execute(
+                "SELECT COUNT(*) FROM mocktails WHERE mocktail_id = %s", 
+                (mocktail['mocktail_id'],)
             )
-            cursor.execute(query, values)
+            if cursor.fetchone()[0] > 0:
+                # Обновляем существующий коктейль
+                query = """
+                UPDATE mocktails
+                SET name = %s, description = %s, image_url = %s
+                WHERE mocktail_id = %s
+                """
+                values = (
+                    mocktail['name'],
+                    mocktail['description'],
+                    mocktail['image_url'],
+                    mocktail['mocktail_id']
+                )
+                cursor.execute(query, values)
+                print(f"Обновлен коктейль: {mocktail['name']}")
+                
+                # Сначала удаляем связи с тегами и ингредиентами
+                cursor.execute("DELETE FROM mocktail_tags WHERE mocktail_id = %s", (mocktail['mocktail_id'],))
+                cursor.execute("DELETE FROM mocktail_ingredients WHERE mocktail_id = %s", (mocktail['mocktail_id'],))
+            else:
+                # Вставляем новый коктейль
+                query = """
+                INSERT INTO mocktails (mocktail_id, name, description, image_url)
+                VALUES (%s, %s, %s, %s)
+                """
+                values = (
+                    mocktail['mocktail_id'],
+                    mocktail['name'],
+                    mocktail['description'],
+                    mocktail['image_url']
+                )
+                cursor.execute(query, values)
+                print(f"Добавлен новый коктейль: {mocktail['name']}")
             
-            # 3. Вставка тегов
+            # Добавляем теги
             for tag in mocktail['tags']:
                 # Проверяем, существует ли уже такой тег
                 cursor.execute("SELECT tag_id FROM tags WHERE name = %s", (tag,))
@@ -239,7 +335,7 @@ def import_mocktails():
                     (mocktail['mocktail_id'], tag_id)
                 )
             
-            # 4. Вставка ингредиентов
+            # Добавляем ингредиенты
             for ingredient_name, amount in mocktail['ingredients'].items():
                 # Получаем ID ингредиента
                 cursor.execute("SELECT ingredient_id FROM ingredients WHERE name = %s", (ingredient_name,))
@@ -256,18 +352,20 @@ def import_mocktails():
                     print(f"Внимание: Ингредиент '{ingredient_name}' не найден в базе данных")
         
         conn.commit()
-        print(f"Импортировано {len(mocktails)} коктейлей")
+        print(f"Обновление коктейлей завершено")
     
     except Exception as e:
         conn.rollback()
-        print(f"Ошибка при импорте коктейлей: {e}")
+        print(f"Ошибка при обновлении коктейлей: {e}")
     
     finally:
         cursor.close()
         conn.close()
 
 if __name__ == "__main__":
-    print("Начинаем импорт данных в базу данных mocktail_machine...")
-    import_ingredients()
-    import_mocktails()
-    print("Импорт данных завершен!")
+    print("Начинаем обновление данных в базе данных mocktail_machine...")
+    # Обновляем структуру таблиц для поддержки рейтингов
+    update_table_structure()
+    update_ingredients()
+    update_mocktails()
+    print("Обновление данных завершено!")
